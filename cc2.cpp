@@ -10,17 +10,24 @@
 #include <vector>
 #include <sys/un.h>
 #include <fcntl.h>
+#include <mutex>
+#include <memory>
+#include <dirent.h>
+#include <signal.h>
+
+const char * conn = "./connections/";
 
 struct clientData
 {
 	int remotefd = -1;
 	int unixserverfd = -1;
 	int unixremotefd = -1;
+	char * filename;
 };
 
 std::mutex loggerMutex;
 std::shared_ptr<std::ofstream> logger;
-std::vector <clientData> sockets;
+std::vector <clientData> clients;
 
 void enable_keepalive(int sock)
 {
@@ -87,7 +94,7 @@ void remoteHandle ()
 	struct sockaddr_in serv_addr;
 	struct sockaddr_in cli_addr;
 	int serverfd = socket (AF_INET,SOCK_STREAM,0);
-	std::cout << "Remote server socket : " << serverfd << std::endl;
+	//std::cout << "Remote server socket : " << serverfd << std::endl;
 	int clifd {0};
 	int maxsd {0};
 	fd_set readfds;
@@ -120,7 +127,7 @@ void remoteHandle ()
 
 	while (1)
 	{
-		clientData soc;
+		clientData client;
 
 		FD_ZERO (&readfds);
 
@@ -128,9 +135,9 @@ void remoteHandle ()
 
 		maxsd = serverfd; // to make 'select' life easier
 		int i = 0;
-		for (auto const & s : sockets) // add socket descriptors to be checked by select
+		for (auto const & s : clients) // add socket descriptors to be checked by select
 		{
-			std::cout << "i = " << i << std::endl;
+			//std::cout << "i = " << i << std::endl;
 			FD_SET (s.remotefd, &readfds);
 			FD_SET (s.unixserverfd, &readfds);
 			//std::cout << "s.remotefd = " << s.remotefd << std::endl;
@@ -169,20 +176,31 @@ void remoteHandle ()
 				*logger << "Problem with accepting new connection " << strerror(errno) << std::endl;
 			}
 			//std::cout << "Remote socket : " << clifd << std::endl;
-			soc.remotefd = clifd;
+			client.remotefd = clifd;
 			enable_keepalive(clifd);
 
 			{
 				std::lock_guard<std::mutex> lck(loggerMutex);
 				*logger << "New connection from " << inet_ntoa(cli_addr.sin_addr) << std::endl;
 			}
+			struct stat st = {0};
+			if (stat(conn, &st) == -1) 
+			{
+    			mkdir(conn, 0700);
+			}
 
-			int unixsocfd = createUnixSoc("unixsoc"); // TODO change to unique unix socket names
-			soc.unixserverfd = unixsocfd;
-			sockets.push_back(soc);
+			client.filename = inet_ntoa(cli_addr.sin_addr);
+
+			char filepath [100] {0};
+			strcpy (filepath,conn);
+			strcpy (filepath+14,inet_ntoa(cli_addr.sin_addr)); 
+
+			int unixsocfd = createUnixSoc(filepath);
+			client.unixserverfd = unixsocfd;
+			clients.push_back(client);
 		}
-
-		for (auto & s : sockets)
+		int clientsIt = 0 ;
+		for (auto & s : clients)
 		{
 			char buf [0xffff];
 			if (FD_ISSET(s.remotefd,&readfds))
@@ -197,6 +215,14 @@ void remoteHandle ()
 				{
 					std::lock_guard<std::mutex> lck(loggerMutex);
 					*logger << "Client disconnected " << std::endl; // TODO cleanup	
+					char filepath [100] {0};
+					strcpy (filepath,conn);
+					strcpy (filepath+14,s.filename);
+					remove (filepath);
+					close(s.remotefd);
+					close(s.unixserverfd);
+					close(s.unixremotefd);
+					clients.erase(std::begin(clients) + clientsIt);
 				}
 				else if (s.unixremotefd != -1)
 				{
@@ -231,8 +257,11 @@ void remoteHandle ()
 				{
 					std::lock_guard<std::mutex> lck(loggerMutex);
 					*logger << "Unix remote socket disconnected " << strerror(errno) << std::endl;
+					close (s.unixremotefd);
+					s.unixremotefd = -1;
+					FD_CLR(s.unixremotefd,&readfds);
 				}
-				if (send(s.remotefd,buf,strlen(buf),0) == -1)
+				if (send(s.remotefd,buf,ret,0) == -1)
 				{
 					std::lock_guard<std::mutex> lck(loggerMutex);
 					*logger << "Cannot send to remote socket " << strerror(errno) << std::endl;
@@ -241,6 +270,23 @@ void remoteHandle ()
 			}
 		}
 	}
+}
+void flushConnections ()
+{
+	DIR *d;
+    struct dirent *dir;
+    d = opendir(conn);
+    if (d)
+    {
+       	while ((dir = readdir(d)) != NULL)
+       	{
+       		char filepath [100] {0};
+			strcpy (filepath,conn);
+			strcpy (filepath+14,dir->d_name);
+			remove(filepath);
+        }
+        closedir(d);
+    }
 }
 int main (int argc,char ** argv)
 {
@@ -269,6 +315,9 @@ int main (int argc,char ** argv)
 	close (STDERR_FILENO);
 	*/
 
+	// remove old not valid connections
+
+	flushConnections();
 	logger = std::make_shared<std::ofstream>();
 	logger->rdbuf()->pubsetbuf(0, 0);
 	logger->open("log.txt",std::ios::app);
