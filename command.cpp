@@ -58,7 +58,7 @@ int main (int argc,char ** argv)
 	bool targetSelected = false;
 	while (1)
 	{
-		if (proc_find("/home/pi/Daemons/cc2") == -1)
+		if ( (proc_find("/home/pi/Daemons/cc2") == -1 ) && ( proc_find("./cc2") == -1 ) )
 		{
 			std::cout << "\033[22;36m[!]\033[0m" << " cc server is not running, exiting..." << std::endl;
 			return -1;
@@ -87,6 +87,11 @@ int main (int argc,char ** argv)
     	if (std::cin.good())
     	{
     		targetSelected = true;
+    	}
+    	else
+    	{
+    		std::cin.clear();
+			std::cin.ignore();
     	}
 		while (targetSelected)
 		{
@@ -129,7 +134,25 @@ int main (int argc,char ** argv)
 						int r = read (fd,buf,0xffff);
 						if (r > 0)
 						{
-							std::cout << buf;
+							int s = strlen(buf);
+							for (int i = 0 ; i < s; i++)
+							{
+								if (buf[i] == '\xa0')
+								{
+									buf[i] = '\x20';
+								}
+							}
+							/*
+							for (int i = 0; i < s; i+= 5)
+							{
+								if (buf[i])
+								std::cout << std::hex << (int)buf[i] << " " << (int)buf[i+1] << " " << (int)buf[i+2] << " " << (int)buf[i+3] << " " << (int)buf[i+4] << " | " << buf[i] << " " << buf[i+1] << " " << buf[i+2] << " " << buf[i+3] << " " << buf[i+4] << std::endl;
+							}
+							std::cout << std::endl;
+							std::cout << std::endl;
+							std::cout << std::endl;
+							*/
+							std::cout << buf << std::flush;
 						}
 						else if (r == -1)
 						{

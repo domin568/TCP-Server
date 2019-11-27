@@ -180,6 +180,7 @@ void remoteHandle ()
 			i++;
 		}
 		int ret = select (maxsd + 1, &readfds, NULL , NULL, NULL);
+		*logger << "SELECT RETURNED : " << ret << std::endl;
 		if (ret < 0)
 		{
 			std::lock_guard<std::mutex> lck(loggerMutex);
@@ -198,10 +199,9 @@ void remoteHandle ()
 				*logger << "Problem with accepting new connection " << strerror(errno) << std::endl;
 			}
 			client.remotefd = clifd;
-			enable_keepalive(clifd);
+			//enable_keepalive(clifd);
 
 			std::string actualIP (inet_ntoa(cli_addr.sin_addr));
-
 
 			if (ipsoccurrences.find(actualIP) == ipsoccurrences.end())
 			{
@@ -227,7 +227,7 @@ void remoteHandle ()
 			std::stringstream stream;
 			stream << " [" << ipsoccurrences[actualIP] << "] ";
 			
-			client.filename = strdup (inet_ntoa(cli_addr.sin_addr));
+			client.filename = actualIP;
 			client.filename.append(stream.str());
 			std::string filepath = conn + client.filename;
 
