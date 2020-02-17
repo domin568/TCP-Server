@@ -18,6 +18,8 @@ bool TARGETS_SELECTED = false;
 const char CLEAR_SCREEN [] = "\033[2J\033[1;1H";
 const char RED_COLOR_START [] = "\033[1;31m";
 const char COLOR_END [] = "\033[0m";
+int fd; // file descriptor of actual connection
+bool quit = false;
 
 pid_t proc_find(const char* name) 
 {
@@ -118,7 +120,35 @@ void notifyAboutNewConnectionsWhenDisconnected (bool connectionsAvailable, std::
 		printHosts (connections);
 	}
 }
+int up_arrow_function (int a, int b)
+{
+	std::cout << "UP" << std::endl;
+	
+	return 0;
+}
 
+void commandEntered (char * command)
+{
+	if (command == NULL) 
+	{
+		quit = true;
+        return;
+    }
+	if (write (fd,command,strlen(command)) == -1)
+	{
+		perror ("cannot send data to unix socket");
+	}
+	if (write (fd,"\n",1) == -1) // dirty hack
+	{
+		perror ("cannot send data to unix socket2");
+	}
+	if(strlen(command) > 0)
+	{
+		add_history(command);
+	}
+	free (command);
+
+}
 int main (int argc,char ** argv)
 {
 	while (1)
@@ -168,7 +198,6 @@ int main (int argc,char ** argv)
 			char buf [0xffff];
 		
 			struct sockaddr_un addr;
-		 	int fd,rc;
 		
 	 		if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		 	{
@@ -189,13 +218,14 @@ int main (int argc,char ** argv)
 		 		exit (-1);
 		 	}
 		 	std::cout << "[*] Connected with " << connections[selected] << std::endl;
-		
+
+		 	rl_callback_handler_install ("> ", &commandEntered); // NOW WE ARE USING SHELL EXPANSIONS
 			while (1)
 			{
 				FD_ZERO(&readfds);
 				FD_SET(fd, &readfds);
 				FD_SET(0, &readfds);	
-				int ret = select(FD_SETSIZE, &readfds, NULL, NULL, NULL); // select unix socket or stdin to read from	
+				int ret = select(FD_SETSIZE, &readfds, NULL, NULL, NULL); // select unix socket or stdin to read from
 				if (ret > 0)
 				{
 					if (FD_ISSET(fd, &readfds)) // GET DATA FROM REMOTE HOST
@@ -222,18 +252,14 @@ int main (int argc,char ** argv)
 						{
 							std::cout << "[!] Connection closed by remote host or server is down" << std::endl;
 							TARGETS_SELECTED = false;
+							rl_callback_handler_remove ();
 							break;
 						}
 						memset (buf,0,0xffff);
 					}
 					else if (FD_ISSET(0, &readfds)) // SEND DATA TO REMOTE HOST
 					{
-						int r = read (0,buf,0xffff);
-						if (write (fd,buf,strlen(buf)) == -1)
-						{
-							perror ("cannot send data to unix socket");
-						}
-						memset (buf,0,0xffff);
+						rl_callback_read_char();
 					}
 				}
 				else if (ret < 0)
@@ -244,5 +270,6 @@ int main (int argc,char ** argv)
 			}
 		}
 	}
+	
 	return 0;
 }

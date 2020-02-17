@@ -3,7 +3,7 @@ CXXFLAGS_CC = -Wall -std=c++14
 LDFLAGS_CC = 
 
 CXXFLAGS_COMMAND = -Wall -std=c++14 
-LDFLAGS_COMMAND = -pthread
+LDFLAGS_COMMAND = -pthread -lreadline
 
 OBJDIR := obj
 
